@@ -7,7 +7,7 @@
   <style>
     body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 24px; }
     .row { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; }
-    .card { border: 1px solid #e5e7eb; border-radius: 12px; padding: 16px; max-width: 720px; }
+    .card { border: 1px solid #e5e7eb; border-radius: 12px; padding: 16px; max-width: 760px; }
     video { width: 480px; max-width: 100%; border-radius: 12px; background: #000; display: block; }
     button { padding: 10px 14px; border-radius: 8px; border: 1px solid #cbd5e1; background: white; cursor: pointer; }
     .row button { min-width: 120px; }
@@ -16,7 +16,13 @@
     input[type=text]{ width: 320px; padding: 8px; }
     .grid { display: grid; gap: 12px; grid-template-columns: 1fr; }
     .kv { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
-    pre#serverLog { margin-top: 12px; border: 1px solid #e5e7eb; padding: 8px; border-radius: 8px; max-height: 220px; overflow: auto; background:#fafafa; }
+    pre#serverLog { margin-top: 12px; border: 1px solid #e5e7eb; padding: 8px; border-radius: 8px; max-height: 240px; overflow: auto; background:#fafafa; }
+    .badge { display:inline-block; padding: 2px 8px; border-radius: 999px; border:1px solid #e5e7eb; font-size:12px; }
+    .field { display: flex; flex-direction: column; gap: 6px; max-width: 240px; }
+    .fields { display: grid; gap: 12px; grid-template-columns: 1fr; }
+    @media (min-width: 640px) {
+      .fields { grid-template-columns: repeat(2, minmax(200px, 1fr)); }
+    }
   </style>
 </head>
 <body>
@@ -28,6 +34,7 @@
       <button id="btnStop" disabled>Stop</button>
       <button id="btnMute" disabled>Mute Audio</button>
       <button id="btnHide" disabled>Hide Video</button>
+      <span id="statusBadge" class="badge">idle</span>
     </div>
 
     <div class="kv">
@@ -35,16 +42,20 @@
       <input id="sessionId" type="text" placeholder="auto-generated…" />
     </div>
 
-    <div class="kv">
-      <label for="audioLen">Audio chunk (ms)</label>
-      <input id="audioLen" type="text" value="1000" />
-      <label for="videoLen" style="margin-left:8px;">Video chunk (ms)</label>
-      <input id="videoLen" type="text" value="1000" />
+    <div class="fields">
+      <div class="field">
+        <label for="audioLen">Audio chunk (ms)</label>
+        <input id="audioLen" type="text" value="1000" />
+      </div>
+      <div class="field">
+        <label for="videoLen">Video chunk (ms)</label>
+        <input id="videoLen" type="text" value="1000" />
+      </div>
     </div>
 
     <video id="preview" autoplay playsinline muted></video>
     <p class="muted">
-      Uses <code>Twilio.Video.createLocalTracks()</code> to get tracks, then <code>MediaRecorder</code> to POST chunks to the Python server. Server replies for this session arrive over <code>WebSocket</code> and are shown below.
+      Local tracks from <code>Twilio.Video.createLocalTracks()</code> → chunked via <code>MediaRecorder</code>. On each <strong>video chunk boundary</strong>, a JPEG snapshot is taken and POSTed to <code>/analyze/frame?sid=...</code>. The server pushes Rekognition results back over WebSocket.
     </p>
 
     <pre id="serverLog">Server messages:
@@ -55,7 +66,7 @@
   <script src="https://sdk.twilio.com/js/video/releases/2.32.1/twilio-video.min.js"></script>
 
   <script>
-    // Same-origin base 
+
     const serverBase = "";
 
     let localAudioTrack, localVideoTrack;
@@ -64,16 +75,20 @@
     let isMuted = false, isHidden = false;
     let ws;
 
+    // Offscreen canvas for snapshots
+    const snapCanvas = document.createElement('canvas');
+
     const $  = (id) => document.getElementById(id);
     const btnStart = $("btnStart");
     const btnStop  = $("btnStop");
     const btnMute  = $("btnMute");
     const btnHide  = $("btnHide");
     const preview  = $("preview");
-    const sessionIdInput = $("sessionId");
     const serverLog = $("serverLog");
+    const sessionIdInput = $("sessionId");
     const audioLenInput = $("audioLen");
     const videoLenInput = $("videoLen");
+    const statusBadge = $("statusBadge");
 
     const uuid = () => {
       return ([1e7]+-1e3+-4e3+-8e3+-1e11).replace(/[018]/g,c=>
@@ -83,10 +98,13 @@
     if (!sessionIdInput.value) sessionIdInput.value = uuid();
 
     const logServer = (msg) => {
-      console.log(msg);
       const ts = new Date().toISOString().split("T")[1].replace("Z", "");
       serverLog.textContent += `[${ts}] ${msg}\n`;
       serverLog.scrollTop = serverLog.scrollHeight;
+    }
+
+    const setStatus = (text) => {
+      statusBadge.textContent = text;
     }
 
     const connectWS = (sid) => {
@@ -94,18 +112,59 @@
       ws = new WebSocket(`${proto}://${location.host}/ws?sid=${encodeURIComponent(sid)}`);
       ws.onopen = () => console.log("WS connected for sid:", sid);
       ws.onmessage = (event) => {
-        console.log("Server - client:", event.data);
-        logServer(event.data);
+        try {
+          const data = JSON.parse(event.data);
+          if (data?.type === "emotion_result") {
+            logServer(`Rekognition: primary=${data.primaryEmotion || "None"} (${data.primaryConfidence?.toFixed?.(1) || 0}%) over50=${(data.emotionsOver50||[]).join(", ")} color=${data.backgroundColor}`);
+            document.body.style.background = data.backgroundColor || "#ffffff";
+          } else if (data?.type === "emotion_error") {
+            logServer(`Rekognition error: ${data.message}`);
+          } else {
+            logServer(event.data);
+          }
+        } catch {
+          logServer(event.data);
+        }
       };
       ws.onclose = () => console.log("WS closed");
       ws.onerror = (e) => console.warn("WS error", e);
     }
 
+    const postFrameForEmotion = async (sid) => {
+      // Take a JPEG snapshot from the preview video and POST to /analyze/frame
+      if (!preview || !preview.videoWidth) return;
+
+      snapCanvas.width = preview.videoWidth;
+      snapCanvas.height = preview.videoHeight;
+
+      const ctx = snapCanvas.getContext('2d');
+      if (!ctx) return;
+
+      ctx.drawImage(preview, 0, 0, snapCanvas.width, snapCanvas.height);
+
+      const blob = await new Promise(resolve => snapCanvas.toBlob(resolve, 'image/jpeg', 0.9));
+      if (!blob) return;
+
+      const fd = new FormData();
+      fd.append('frame', blob, 'frame.jpg');
+
+      try {
+        await fetch(`${serverBase}/analyze/frame?sid=${encodeURIComponent(sid)}`, {
+          method: "POST",
+          body: fd
+        });
+      } catch (e) {
+        console.warn('Frame post failed', e);
+        logServer("Frame post failed (see console).");
+      }
+    }
+
     const start = async () => {
       try {
         btnStart.disabled = true;
+        setStatus("starting…");
 
-        // Create/get sid and connect WS first, so server can respond to early uploads
+        // Create/get sid and connect WS first
         const sid = sessionIdInput.value || uuid();
         sessionIdInput.value = sid;
         connectWS(sid);
@@ -129,7 +188,6 @@
         audioStream = new MediaStream([localAudioTrack.mediaStreamTrack]);
         videoStream = new MediaStream([localVideoTrack.mediaStreamTrack]);
 
-        // MediaRecorders
         const audioMime = 'audio/webm;codecs=opus';
         const videoMime = 'video/webm;codecs=vp8';
         audioRecorder = new MediaRecorder(audioStream, { mimeType: audioMime });
@@ -138,14 +196,18 @@
         const audioChunkMs = Math.max(200, parseInt(audioLenInput.value || "1000", 10));
         const videoChunkMs = Math.max(200, parseInt(videoLenInput.value || "1000", 10));
 
+        // Upload handlers
         audioRecorder.ondataavailable = (e) => {
           if (e.data && e.data.size) {
             uploadChunk(e.data, `${serverBase}/upload/audio?sid=${encodeURIComponent(sid)}`);
           }
         };
-        videoRecorder.ondataavailable = (e) => {
+
+        // On every video chunk, also snapshot a JPEG and send to /analyze/frame
+        videoRecorder.ondataavailable = async (e) => {
           if (e.data && e.data.size) {
             uploadChunk(e.data, `${serverBase}/upload/video?sid=${encodeURIComponent(sid)}`);
+            await postFrameForEmotion(sid);
           }
         };
 
@@ -155,9 +217,12 @@
         btnStop.disabled = false;
         btnMute.disabled = false;
         btnHide.disabled = false;
-      } catch (err) {
-        console.error(err);
+        setStatus("streaming");
+      } catch (e) {
+        console.error(e);
+        logServer("Start failed (see console).");
         btnStart.disabled = false;
+        setStatus("idle");
       }
     }
 
@@ -181,6 +246,7 @@
       isHidden = false;
       btnMute.textContent = "Mute Audio";
       btnHide.textContent = "Hide Video";
+      setStatus("idle");
     }
 
     const toggleMute = () => {

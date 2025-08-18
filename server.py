@@ -6,6 +6,9 @@ from fastapi import WebSocket, WebSocketDisconnect
 from pathlib import Path
 from typing import Dict, Set
 import asyncio
+import json
+
+from services.rekognition_service import detect_emotions
 
 app = FastAPI()
 
@@ -109,3 +112,34 @@ def stats(sid: str | None = None):
             raise HTTPException(status_code=404, detail="Unknown sid")
         return SESSIONS[sid]
     return SESSIONS
+
+@app.post("/analyze/frame")
+async def analyze_frame(sid: str, frame: UploadFile = File(...)):
+    if frame.content_type not in ("image/jpeg", "image/png", "application/octet-stream"):
+        raise HTTPException(status_code=400, detail=f"Unsupported content-type: {frame.content_type}")
+
+    sess = touch_session(sid)
+    image_bytes = await frame.read()
+
+    try:
+        result = detect_emotions(image_bytes)
+        if "frames_analyzed" in sess:
+            sess["frames_analyzed"] += 1
+
+        payload = {
+            "type": "emotion_result",
+            "sid": sid,
+            "framesAnalyzed": sess.get("frames_analyzed", 0),
+            **result,
+        }
+
+        await send_to_client(sid, json.dumps(payload))
+        return {"ok": True, "result": payload}
+
+    except RuntimeError as e:
+        msg = str(e)
+        await send_to_client(
+            sid,
+            json.dumps({"type": "emotion_error", "sid": sid, "message": msg})
+        )
+        raise HTTPException(status_code=500, detail=msg)
