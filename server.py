@@ -8,7 +8,7 @@ from typing import Dict, Set
 import asyncio
 import json
 
-from services.rekognition_service import detect_emotions, detect_faces_and_emotions
+from services.rekognition_service import detect_emotions, detect_everything
 
 app = FastAPI()
 
@@ -123,7 +123,7 @@ async def analyze_frame(sid: str, frame: UploadFile = File(...)):
 
     try:
         # result = detect_emotions(image_bytes)
-        result = detect_faces_and_emotions(image_bytes)
+        result = detect_everything(image_bytes)
         if "frames_analyzed" in sess:
             sess["frames_analyzed"] += 1
 
