@@ -26,7 +26,7 @@ uvicorn server:app --reload --host 0.0.0.0 --port 8000
 
 ### Access the Client
 
-You will see the test client UI where you can start and stop the camera, stream chunks to the backend, and optionally receive analysis results over WebSocket.
+You will see the test client UI at http://localhost:8000/ where you can start and stop the camera, stream chunks to the backend, and optionally receive analysis results over WebSocket.
 
 ## The Rekognition API
 
