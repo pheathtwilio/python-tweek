@@ -115,7 +115,7 @@
         try {
           const data = JSON.parse(event.data);
           if (data?.type === "emotion_result") {
-            logServer(`Rekognition: primary=${data.primaryEmotion || "None"} (${data.primaryConfidence?.toFixed?.(1) || 0}%) over50=${(data.emotionsOver50||[]).join(", ")} color=${data.backgroundColor}`);
+            logServer(`Rekognition: primary=${data.primaryEmotion || "None"} (${data.primaryConfidence?.toFixed?.(1) || 0}%) over50=${(data.emotionsOver50||[]).join(", ")} color=${data.backgroundColor} raw=${JSON.stringify(data.raw)}`);
             document.body.style.background = data.backgroundColor || "#ffffff";
           } else if (data?.type === "emotion_error") {
             logServer(`Rekognition error: ${data.message}`);

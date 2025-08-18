@@ -1,6 +1,6 @@
 from __future__ import annotations
 import os
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -65,6 +65,83 @@ def detect_emotions(image_bytes: bytes) -> Dict:
     color = EMOTION_COLORS.get((primary_emotion or "").upper(), "#ffffff")
 
     return {
+        "emotionsOver50": emotions_over_50,
+        "primaryEmotion": primary_emotion,
+        "primaryConfidence": primary_conf,
+        "backgroundColor": color,
+        "raw": resp,
+    }
+
+def detect_faces_and_emotions(
+    image_bytes: bytes,
+    *,
+    region: Optional[str] = None,
+    emotion_colors: Optional[Dict[str, str]] = None,
+) -> Dict[str, Any]:
+    """
+    Run AWS Rekognition DetectFaces on in-memory image bytes.
+
+    Args:
+        image_bytes: Raw bytes of a JPEG/PNG image to analyze.
+        region: Optional AWS region override. If not provided, uses AWS_REGION or AWS_DEFAULT_REGION (else us-east-1).
+        emotion_colors: Optional mapping from primary emotion -> hex color.
+
+    Returns:
+        A dict with:
+            faceCount: int
+            faceDetails: list[dict]  # full Rekognition face payloads
+            emotionsOver50: list[str]  # unique emotion labels with >50% confidence across faces
+            primaryEmotion: Optional[str]  # highest-confidence emotion across all faces
+            primaryConfidence: float      # 0..100
+            backgroundColor: str          # color derived from primaryEmotion
+    Raises:
+        RuntimeError on Rekognition errors.
+    """
+    # Defaults
+    region = region or os.getenv("AWS_REGION") or os.getenv("AWS_DEFAULT_REGION") or "us-east-1"
+    emotion_colors = emotion_colors or {
+        "HAPPY": "#FFD700",
+        "SAD": "#1E90FF",
+        "ANGRY": "#FF4500",
+        "SURPRISED": "#8A2BE2",
+        "DISGUSTED": "#228B22",
+        "CALM": "#87CEFA",
+        "CONFUSED": "#DA70D6",
+    }
+
+    rekognition = boto3.client(
+        "rekognition",
+        region_name=region,
+        config=Config(retries={"max_attempts": 3, "mode": "standard"}),
+    )
+
+    try:
+        resp = rekognition.detect_faces(Image={"Bytes": image_bytes}, Attributes=["ALL"])
+    except (BotoCoreError, ClientError) as e:
+        raise RuntimeError(f"Rekognition error: {e}") from e
+
+    face_details: List[Dict[str, Any]] = resp.get("FaceDetails", [])
+    emotions_over_50: List[str] = []
+    seen = set()
+    primary_emotion: Optional[str] = None
+    primary_conf: float = 0.0
+
+    for face in face_details:
+        for emo in face.get("Emotions", []):
+            etype = (emo.get("Type") or "").upper()
+            conf = float(emo.get("Confidence") or 0.0)
+            if conf > 50.0 and etype and etype not in seen:
+                emotions_over_50.append(etype)
+                seen.add(etype)
+            if conf > primary_conf:
+                primary_conf = conf
+                primary_emotion = etype
+
+    color = emotion_colors.get((primary_emotion or "").upper(), "#ffffff")
+
+    return {
+        "faceCount": len(face_details),
+        "faceDetails": face_details,
         "emotionsOver50": emotions_over_50,
         "primaryEmotion": primary_emotion,
         "primaryConfidence": primary_conf,
