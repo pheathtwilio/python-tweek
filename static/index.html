@@ -1,0 +1,157 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Super Simple Video Test Harness</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 24px; }
+    .row { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; }
+    .card { border: 1px solid #e5e7eb; border-radius: 12px; padding: 16px; max-width: 520px; }
+    video { width: 480px; max-width: 100%; border-radius: 12px; background: #000; display: block; }
+    button { padding: 10px 14px; border-radius: 8px; border: 1px solid #cbd5e1; background: white; cursor: pointer; }
+    .row button { min-width: 120px; }
+    .muted { color: #64748b; font-size: 12px; }
+    label { display:block; margin-top: 12px; }
+    input[type=text]{ width: 320px; padding: 8px; }
+  </style>
+</head>
+<body>
+  <h1>Super Simple Video Test Harness</h1>
+
+  <div class="card">
+    <div class="row" style="gap:12px;margin-bottom:12px;">
+      <button id="btnStart">Start</button>
+      <button id="btnStop" disabled>Stop</button>
+      <button id="btnMute" disabled>Mute Audio</button>
+      <button id="btnHide" disabled>Hide Video</button>
+    </div>
+
+    <label>Session ID</label>
+    <input id="sessionId" type="text" placeholder="auto-generated…" />
+
+    <video id="preview" autoplay playsinline muted></video>
+    <p class="muted">
+      Uses <code>Twilio.Video.createLocalTracks()</code> to get tracks, then <code>MediaRecorder</code> to POST chunks to the Python server every few seconds as defined by either AudioChunkLength or VideoChunkLength.
+    </p>
+  </div>
+
+  <script src="https://sdk.twilio.com/js/video/releases/2.32.1/twilio-video.min.js"></script>
+
+  <script>
+    const serverBase = "http://localhost:8000"; 
+
+    let localAudioTrack, localVideoTrack;
+    let audioRecorder, videoRecorder;
+    let audioStream, videoStream;
+    let isMuted = false, isHidden = false;
+
+    const $ = (id) => document.getElementById(id);
+    const btnStart = $("btnStart");
+    const btnStop  = $("btnStop");
+    const btnMute  = $("btnMute");
+    const btnHide  = $("btnHide");
+    const preview  = $("preview");
+    const sessionIdInput = $("sessionId");
+
+    const AudioChunkLength = 1000; // in milliseconds
+    const VideoChunkLength = 1000; // in milliseconds
+
+    function uuid() {
+      return ([1e7]+-1e3+-4e3+-8e3+-1e11).replace(/[018]/g,c=>
+        (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c / 4).toString(16)
+      );
+    }
+    if (!sessionIdInput.value) sessionIdInput.value = uuid();
+
+    const start = async () => {
+      btnStart.disabled = true;
+
+      // Create local tracks using Twilio Video SDK
+      const tracks = await Twilio.Video.createLocalTracks({
+        audio: true,
+        video: { width: 1280, height: 720, frameRate: 30 }
+      });
+
+      localAudioTrack = tracks.find(t => t.kind === "audio");
+      localVideoTrack = tracks.find(t => t.kind === "video");
+
+      // Preview in <video>
+      const previewStream = new MediaStream();
+      if (localAudioTrack) previewStream.addTrack(localAudioTrack.mediaStreamTrack);
+      if (localVideoTrack) previewStream.addTrack(localVideoTrack.mediaStreamTrack);
+      preview.srcObject = previewStream;
+
+      // audio and video streams
+      audioStream = new MediaStream([localAudioTrack.mediaStreamTrack]);
+      videoStream = new MediaStream([localVideoTrack.mediaStreamTrack]);
+
+      // Set up MediaRecorders
+      // default to 'audio/webm;codecs=opus' and 'video/webm;codecs=vp8'
+      audioRecorder = new MediaRecorder(audioStream, { mimeType: 'audio/webm;codecs=opus' });
+      videoRecorder = new MediaRecorder(videoStream, { mimeType: 'video/webm;codecs=vp8' });
+
+      const sid = sessionIdInput.value || uuid();
+
+      audioRecorder.ondataavailable = (e) => e.data.size && uploadChunk(e.data, `${serverBase}/upload/audio?sid=${encodeURIComponent(sid)}`);
+      videoRecorder.ondataavailable = (e) => e.data.size && uploadChunk(e.data, `${serverBase}/upload/video?sid=${encodeURIComponent(sid)}`);
+
+      audioRecorder.start(AudioChunkLength);
+      videoRecorder.start(VideoChunkLength);
+
+      btnStop.disabled = false;
+      btnMute.disabled = false;
+      btnHide.disabled = false;
+    }
+
+    const stop = async () => {
+      [audioRecorder, videoRecorder].forEach(r => {
+        if (r && r.state !== "inactive") r.stop();
+      });
+
+      [localAudioTrack, localVideoTrack].forEach(t => t && t.stop());
+
+      preview.srcObject && preview.srcObject.getTracks().forEach(tr => tr.stop());
+      preview.srcObject = null;
+
+      btnStart.disabled = false;
+      btnStop.disabled = true;
+      btnMute.disabled = true;
+      btnHide.disabled = true;
+      isMuted = false;
+      isHidden = false;
+      btnMute.textContent = "Mute Audio";
+      btnHide.textContent = "Hide Video";
+    }
+
+    const toggleMute = () => {
+      if (!localAudioTrack) return;
+      isMuted = !isMuted;
+      localAudioTrack.enable(!isMuted);
+      btnMute.textContent = isMuted ? "Unmute Audio" : "Mute Audio";
+    }
+
+    const toggleHide = () => {
+      if (!localVideoTrack) return;
+      isHidden = !isHidden;
+      localVideoTrack.enable(!isHidden);
+      btnHide.textContent = isHidden ? "Show Video" : "Hide Video";
+    }
+
+    const uploadChunk = async (blob, url) => {
+      try {
+        const fd = new FormData();
+        fd.append("chunk", blob, `part-${Date.now()}.webm`);
+        await fetch(url, { method: "POST", body: fd });
+      } catch (err) {
+        console.error("Upload failed:", err);
+      }
+    }
+
+    btnStart.onclick = start;
+    btnStop.onclick  = stop;
+    btnMute.onclick  = toggleMute;
+    btnHide.onclick  = toggleHide;
+  </script>
+</body>
+</html>
