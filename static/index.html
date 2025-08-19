@@ -5,61 +5,120 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Super Simple Video Test Harness</title>
   <style>
-    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 24px; }
-    .row { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; }
-    .card { border: 1px solid #e5e7eb; border-radius: 12px; padding: 16px; max-width: 760px; }
-    video { width: 480px; max-width: 100%; border-radius: 12px; background: #000; display: block; }
+    :root {
+      --border:#e5e7eb; --muted:#64748b; --bg:#ffffff; --chip:#f1f5f9;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; background: var(--bg); }
+    .app { display: grid; grid-template-columns: 340px 1fr; min-height: 100vh; }
+    .left { border-right: 1px solid var(--border); padding: 20px; display: flex; flex-direction: column; gap: 16px; }
+    .right { padding: 20px; }
+    h1 { margin: 0 0 8px; font-size: 18px; }
+    .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
     button { padding: 10px 14px; border-radius: 8px; border: 1px solid #cbd5e1; background: white; cursor: pointer; }
-    .row button { min-width: 120px; }
-    .muted { color: #64748b; font-size: 12px; }
-    label { display:block; margin-top: 12px; }
-    input[type=text]{ width: 320px; padding: 8px; }
-    .grid { display: grid; gap: 12px; grid-template-columns: 1fr; }
-    .kv { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
-    pre#serverLog { margin-top: 12px; border: 1px solid #e5e7eb; padding: 8px; border-radius: 8px; max-height: 240px; overflow: auto; background:#fafafa; }
-    .badge { display:inline-block; padding: 2px 8px; border-radius: 999px; border:1px solid #e5e7eb; font-size:12px; }
-    .field { display: flex; flex-direction: column; gap: 6px; max-width: 240px; }
-    .fields { display: grid; gap: 12px; grid-template-columns: 1fr; }
-    @media (min-width: 640px) {
-      .fields { grid-template-columns: repeat(2, minmax(200px, 1fr)); }
+    button:disabled { opacity: .5; cursor: default; }
+    label { font-size: 12px; color: var(--muted); display:block; }
+    input[type=text] { width: 100%; padding: 8px; border:1px solid var(--border); border-radius: 8px; }
+    .fields { display: grid; gap: 12px; grid-template-columns: 1fr 1fr; }
+    .field { display:flex; flex-direction:column; gap:6px; }
+    .card { border:1px solid var(--border); border-radius: 12px; padding: 12px; background: #fff; }
+    .badge { display:inline-block; padding:2px 8px; border-radius:999px; background: var(--chip); border:1px solid var(--border); font-size:12px; }
+    pre#serverLog { height: 180px; overflow:auto; margin:0; background:#f8fafc; border-radius:8px; padding:8px; border:1px solid var(--border); }
+    /* Participants grid */
+    #participants { 
+      display: grid;
+      grid-template-columns: repeat(2, 1fr); /* 2 per row */
+      gap: 16px; /* spacing between tiles */
+      width: 100%;
+      /*max-width: 1200px; /* optional: keeps it from stretching too wide */
+      margin: 0 auto; /* center in page */
+      padding: 16px;
+      box-sizing: border-box;
+    }
+    .tile {
+      /*background: #111;       /* optional: dark background */
+      border-radius: 12px;
+      overflow: hidden;
+      /*display: flex;
+      flex-direction: column;*/
+      align-items: center;
+      justify-content: center;
+    }
+    .tile .media { position: relative; width: 60%; background:#000; }
+    .tile video, .tile img {
+      width: 100%;
+      height: auto;
+      max-height: 400px;   /* keeps them nicely scaled */
+      object-fit: cover;   /* crop nicely if aspect ratio differs */
+      border-radius: 12px;
+    }
+    .tile canvas.overlay { position:absolute; left:0; top:0; width:100%; height:100%; pointer-events:none; }
+    .tile .meta { width: 40%; border-left:1px solid var(--border); padding: 10px; display:flex; flex-direction:column; gap:6px; }
+    .kvs { font-size: 12px; color:#0f172a; }
+    .kv { display:flex; justify-content: space-between; gap:8px; font-size: 12px; }
+    .kv .k { color: var(--muted); }
+    .kv .v { font-weight: 600; }
+    /* Hidden preview video used for local capture only */
+    video#preview { 
+      position: absolute;
+      left: -9999px;
+      top: 0;
+      width: 640px;   /* optional */
+      height: auto;   /* optional */
+      opacity: 0;     /* or visibility:hidden */
+      pointer-events: none;
+    }
+    @media (max-width: 920px) {
+      .app { grid-template-columns: 1fr; }
+      .left { border-right: 0; border-bottom:1px solid var(--border); }
     }
   </style>
 </head>
 <body>
-  <h1>Super Simple Video Test Harness</h1>
-
-  <div class="card grid">
-    <div class="row" style="gap:12px;margin-bottom:12px;">
-      <button id="btnStart">Start</button>
-      <button id="btnStop" disabled>Stop</button>
-      <button id="btnMute" disabled>Mute Audio</button>
-      <button id="btnHide" disabled>Hide Video</button>
-      <span id="statusBadge" class="badge">idle</span>
-    </div>
-
-    <div class="kv">
-      <label for="sessionId">Session ID</label>
-      <input id="sessionId" type="text" placeholder="auto-generated…" />
-    </div>
-
-    <div class="fields">
-      <div class="field">
-        <label for="audioLen">Audio chunk (ms)</label>
-        <input id="audioLen" type="text" value="1000" />
+  <div class="app">
+    <!-- Left pane: controls and logs -->
+    <aside class="left">
+      <div>
+        <h1>Controls</h1>
+        <div class="row" style="margin-top:6px;">
+          <button id="btnStart">Start</button>
+          <button id="btnStop" disabled>Stop</button>
+          <button id="btnMute" disabled>Mute Audio</button>
+          <button id="btnHide" disabled>Hide Video</button>
+          <span id="statusBadge" class="badge">idle</span>
+        </div>
       </div>
-      <div class="field">
-        <label for="videoLen">Video chunk (ms)</label>
-        <input id="videoLen" type="text" value="1000" />
+
+      <div class="card">
+        <div class="field">
+          <label for="sessionId">Session ID</label>
+          <input id="sessionId" type="text" placeholder="auto-generated…" />
+        </div>
+        <div class="fields" style="margin-top:10px;">
+          <div class="field">
+            <label for="audioLen">Audio chunk (ms)</label>
+            <input id="audioLen" type="text" value="1000" />
+          </div>
+          <div class="field">
+            <label for="videoLen">Video chunk (ms)</label>
+            <input id="videoLen" type="text" value="1000" />
+          </div>
+        </div>
       </div>
-    </div>
 
-    <video id="preview" autoplay playsinline muted></video>
-    <p class="muted">
-      Local tracks from <code>Twilio.Video.createLocalTracks()</code> → chunked via <code>MediaRecorder</code>. On each <strong>video chunk boundary</strong>, a JPEG snapshot is taken and POSTed to <code>/analyze/frame?sid=...</code>. The server pushes Rekognition results back over WebSocket.
-    </p>
-
-    <pre id="serverLog">Server messages:
+      <div>
+        <h1>Server messages</h1>
+        <pre id="serverLog">Waiting…
 </pre>
+      </div>
+
+      <video id="preview" autoplay playsinline muted></video>
+    </aside>
+
+    <main class="right">
+      <h1>Participants</h1>
+      <div id="participants"></div>
+    </main>
   </div>
 
   <!-- Twilio Video SDK (v2.32.1) -->
@@ -73,22 +132,21 @@
     let audioRecorder, videoRecorder;
     let audioStream, videoStream;
     let isMuted = false, isHidden = false;
+
+    const snapCanvas = document.createElement('canvas');
+    let snapshotTimer = null;
+    const SNAPSHOT_INTERVAL_MS = 1000; // 1 fps; tune as needed
+
     let ws;
 
-    // Offscreen canvas for snapshots
-    const snapCanvas = document.createElement('canvas');
-
-    const $  = (id) => document.getElementById(id);
-    const btnStart = $("btnStart");
-    const btnStop  = $("btnStop");
-    const btnMute  = $("btnMute");
-    const btnHide  = $("btnHide");
-    const preview  = $("preview");
+    // DOM helpers
+    const $ = (id) => document.getElementById(id);
+    const btnStart = $("btnStart"), btnStop = $("btnStop"), btnMute = $("btnMute"), btnHide = $("btnHide");
+    const statusBadge = $("statusBadge"), sessionIdInput = $("sessionId");
+    const audioLenInput = $("audioLen"), videoLenInput = $("videoLen");
     const serverLog = $("serverLog");
-    const sessionIdInput = $("sessionId");
-    const audioLenInput = $("audioLen");
-    const videoLenInput = $("videoLen");
-    const statusBadge = $("statusBadge");
+    const preview = $("preview");
+    const participantsGrid = $("participants");
 
     const uuid = () => {
       return ([1e7]+-1e3+-4e3+-8e3+-1e11).replace(/[018]/g,c=>
@@ -97,42 +155,61 @@
     }
     if (!sessionIdInput.value) sessionIdInput.value = uuid();
 
-    const logServer = (msg) => {
-      const ts = new Date().toISOString().split("T")[1].replace("Z", "");
+    const setStatus = (t) => { statusBadge.textContent = t; }
+    const log = (msg) => {
+      const ts = new Date().toISOString().split("T")[1].replace("Z","");
       serverLog.textContent += `[${ts}] ${msg}\n`;
       serverLog.scrollTop = serverLog.scrollHeight;
     }
+    const logServer = log;
 
-    const setStatus = (text) => {
-      statusBadge.textContent = text;
+    // Participants
+    const participants = new Map(); 
+
+    const ensureParticipantTile = (sid) => {
+      if (participants.has(sid)) return participants.get(sid);
+      const tile = document.createElement("div");
+      tile.className = "tile";
+      const media = document.createElement("div");
+      media.className = "media";
+      const video = document.createElement("video");
+      video.autoplay = true; video.playsInline = true; video.muted = sid === sessionIdInput.value;
+      const canvas = document.createElement("canvas");
+      canvas.className = "overlay";
+      const meta = document.createElement("div");
+      meta.className = "meta";
+      media.appendChild(video);
+      media.appendChild(canvas);
+      tile.appendChild(media);
+      tile.appendChild(meta);
+      participantsGrid.appendChild(tile);
+      const ctx = canvas.getContext("2d");
+      const entry = { el: tile, video, canvas, ctx, metaBox: meta };
+      participants.set(sid, entry);
+      return entry;
     }
 
-    const connectWS = (sid) => {
-      const proto = location.protocol === "https:" ? "wss" : "ws";
-      ws = new WebSocket(`${proto}://${location.host}/ws?sid=${encodeURIComponent(sid)}`);
-      ws.onopen = () => console.log("WS connected for sid:", sid);
-      ws.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          if (data?.type === "emotion_result") {
-            logServer(`Rekognition: primary=${data.primaryEmotion || "None"} (${data.primaryConfidence?.toFixed?.(1) || 0}%) over50=${(data.emotionsOver50||[]).join(", ")} color=${data.backgroundColor} raw=${JSON.stringify(data.raw)}`);
-            document.body.style.background = data.backgroundColor || "#ffffff";
-          } else if (data?.type === "emotion_error") {
-            logServer(`Rekognition error: ${data.message}`);
-          } else {
-            logServer(event.data);
-          }
-        } catch {
-          logServer(event.data);
-        }
-      };
-      ws.onclose = () => console.log("WS closed");
-      ws.onerror = (e) => console.warn("WS error", e);
+    const attachLocalVideoToTile = (sid) => {
+      const p = ensureParticipantTile(sid);
+      p.video.srcObject = preview.srcObject || null;
+      p.video.addEventListener("loadedmetadata", () => resizeCanvasToVideo(p));
+      window.addEventListener("resize", () => resizeCanvasToVideo(p));
+    }
+
+    const resizeCanvasToVideo = (p) => {
+      const rect = p.video.getBoundingClientRect();
+      p.canvas.width = rect.width;
+      p.canvas.height = rect.height;
+      p.ctx.clearRect(0,0,p.canvas.width,p.canvas.height);
     }
 
     const postFrameForEmotion = async (sid) => {
-      // Take a JPEG snapshot from the preview video and POST to /analyze/frame
-      if (!preview || !preview.videoWidth) return;
+      if (!preview) return;
+      if (!preview.videoWidth) return;
+
+      if ('requestVideoFrameCallback' in preview) {
+        await new Promise(res => preview.requestVideoFrameCallback(() => res()));
+      }
 
       snapCanvas.width = preview.videoWidth;
       snapCanvas.height = preview.videoHeight;
@@ -150,41 +227,248 @@
 
       try {
         await fetch(`${serverBase}/analyze/frame?sid=${encodeURIComponent(sid)}`, {
-          method: "POST",
+          method: 'POST',
           body: fd
         });
       } catch (e) {
         console.warn('Frame post failed', e);
-        logServer("Frame post failed (see console).");
+        logServer('Frame post failed (see console).');
+      }
+    };
+
+    const waitForVideoReady = (video) => {
+      return new Promise(resolve => {
+        if (video.readyState >= 2 && video.videoWidth) return resolve();
+        const onReady = () => {
+          if (video.videoWidth) {
+            video.removeEventListener('loadedmetadata', onReady);
+            video.removeEventListener('playing', onReady);
+            resolve();
+          }
+        };
+        video.addEventListener('loadedmetadata', onReady, { once: true });
+        video.addEventListener('playing', onReady, { once: true });
+      });
+    }
+
+    const startSnapshots = (sid, intervalMs = SNAPSHOT_INTERVAL_MS) => {
+      if (snapshotTimer) return;
+      snapshotTimer = setInterval(() => postFrameForEmotion(sid), intervalMs);
+    }
+    const stopSnapshots = () => {
+      if (snapshotTimer) clearInterval(snapshotTimer);
+      snapshotTimer = null;
+    }
+
+    // Drawing helpers
+    const drawFaceOverlays = (p, faceDetails) => {
+      const ctx = p.ctx;
+      const W = p.canvas.width;
+      const H = p.canvas.height;
+
+      ctx.clearRect(0, 0, W, H);
+      if (!faceDetails || !faceDetails.length) return;
+
+      // Filter out very small boxes and low-confidence faces
+      const MIN_AREA = 0.02; 
+      const MIN_CONF = 80;   // face Confidence in %
+      const candidates = faceDetails.filter(f => {
+        const bb = f.BoundingBox || {};
+        const area = (bb.Width || 0) * (bb.Height || 0);
+        const conf = (f.Confidence || 0);
+        return area >= MIN_AREA && conf >= MIN_CONF;
+      });
+
+      // If everything was filtered out, fall back to largest face only
+      const faces = (candidates.length ? candidates : faceDetails)
+        .slice()
+        .sort((a, b) => {
+          const aa = (a.BoundingBox?.Width || 0) * (a.BoundingBox?.Height || 0);
+          const bb = (b.BoundingBox?.Width || 0) * (b.BoundingBox?.Height || 0);
+          return bb - aa;
+        });
+
+      // Draw ONLY the largest face 
+      const f = faces[0];
+      const bb = f.BoundingBox || {};
+      const x = (bb.Left || 0) * W, y = (bb.Top || 0) * H;
+      const w = (bb.Width || 0) * W, h = (bb.Height || 0) * H;
+
+      // Bounding box
+      ctx.lineWidth = 2;
+      // ctx.strokeStyle = "#22c55e";
+      ctx.strokeStyle = "#FFFFFF";
+      ctx.strokeRect(x, y, w, h);
+
+      // Landmarks: pupils, nose, mouth corners
+      const lm = f.Landmarks || [];
+      const byType = {};
+      lm.forEach(pt => byType[pt.Type] = pt);
+
+      function dot(pt, color = "#0ea5e9", r = 3) {
+        if (!pt) return;
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.arc(pt.X * W, pt.Y * H, r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      dot(byType.leftPupil,  "#0ea5e9");
+      dot(byType.rightPupil, "#0ea5e9");
+      dot(byType.nose,       "#f59e0b", 3);
+      dot(byType.mouthLeft,  "#ef4444", 2);
+      dot(byType.mouthRight, "#ef4444", 2);
+
+      // Pose arrow (from nose)
+      const pose = f.Pose || {};
+      const nose = byType.nose;
+      if (nose && (pose.Yaw !== undefined) && (pose.Pitch !== undefined)) {
+        const startX = nose.X * W, startY = nose.Y * H;
+        const scale = Math.max(w, h) * 0.4;
+        const dx = (pose.Yaw / 30) * scale;
+        const dy = (-pose.Pitch / 30) * scale;
+        arrow(ctx, startX, startY, startX + dx, startY + dy, "#10b981");
+        label(ctx, "Pose", startX + dx, startY + dy, "#FFFFFF");
+      }
+
+      // Eye direction arrow (from midpoint between pupils)
+      const lp = byType.leftPupil, rp = byType.rightPupil;
+      const eyeDir = f.EyeDirection || {};
+      if (lp && rp && (eyeDir.Yaw !== undefined) && (eyeDir.Pitch !== undefined)) {
+        const startX = (lp.X + rp.X) / 2 * W;
+        const startY = (lp.Y + rp.Y) / 2 * H;
+        const scale = Math.max(w, h) * 0.35;
+        const dx = (eyeDir.Yaw / 30) * scale;
+        const dy = (-eyeDir.Pitch / 30) * scale;
+        arrow(ctx, startX, startY, startX + dx, startY + dy, "#3b82f6");
+        label(ctx, "Eyes", startX + dx, startY + dy, "#FFFFFF");
+      }
+    }
+
+    const arrow = (ctx, x1,y1,x2,y2, color="#22c55e") => {
+      ctx.strokeStyle = color;
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.moveTo(x1,y1);
+      ctx.lineTo(x2,y2);
+      ctx.stroke();
+      const angle = Math.atan2(y2-y1, x2-x1);
+      const len = 8;
+      ctx.beginPath();
+      ctx.moveTo(x2, y2);
+      ctx.lineTo(x2 - len*Math.cos(angle - Math.PI/6), y2 - len*Math.sin(angle - Math.PI/6));
+      ctx.lineTo(x2 - len*Math.cos(angle + Math.PI/6), y2 - len*Math.sin(angle + Math.PI/6));
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    const label = (ctx, text, x, y, color="#111827") => {
+      ctx.fillStyle = color;
+      ctx.font = "18px sans-serif";  
+      ctx.fillText(text, x + 6, y - 6); 
+    }
+
+    const updateMetaBox = (p, faceDetails, primaryEmotion) => {
+      const faces = faceDetails || [];
+      if (!faces.length) {
+        p.metaBox.innerHTML = '<div class="kvs">No face detected</div>';
+        return;
+      }
+      const f = faces.sort((a,b)=>{
+        const aa=(a.BoundingBox?.Width||0)*(a.BoundingBox?.Height||0);
+        const bb=(b.BoundingBox?.Width||0)*(b.BoundingBox?.Height||0);
+        return bb-aa;
+      })[0];
+
+      const age = f.AgeRange ? `${f.AgeRange.Low}–${f.AgeRange.High}` : "—";
+      const smile = f.Smile?.Value;
+      const gender = f.Gender?.Value;
+      let emo = "—";
+      if (f.Emotions && f.Emotions.length) {
+        const sorted = [...f.Emotions].sort((a,b)=> (b.Confidence||0)-(a.Confidence||0));
+        emo = sorted[0].Type || "—";
+      }
+      const occluded = (f.FaceOccluded && typeof f.FaceOccluded.Value === "boolean") ? String(f.FaceOccluded.Value) : "—";
+      const beard = f.Beard?.Value;
+      const eyesOpen = f.EyesOpen?.Value;
+      const mouthOpen = f.MouthOpen?.Value;
+
+      p.metaBox.innerHTML = `
+        <div class="kvs">
+          <div class="kv"><span class="k">Age Range</span><span class="v">${age}</span></div>
+          <div class="kv"><span class="k">Gender</span><span class="v">${gender}</span></div>
+          <div class="kv"><span class="k">Smile</span><span class="v">${smile}</span></div>
+          <div class="kv"><span class="k">Emotion</span><span class="v">${emo}</span></div>
+          <div class="kv"><span class="k">FaceOccluded</span><span class="v">${occluded}</span></div>
+          <div class="kv"><span class="k">Beard</span><span class="v">${beard}</span></div>
+          <div class="kv"><span class="k">Eyes Open</span><span class="v">${eyesOpen}</span></div>
+          <div class="kv"><span class="k">Mouth Open</span><span class="v">${mouthOpen}</span></div>
+        </div>
+      `;
+    }
+
+    const connectWS = (sid) => {
+      const proto = location.protocol === "https:" ? "wss" : "ws";
+      ws = new WebSocket(`${proto}://${location.host}/ws?sid=${encodeURIComponent(sid)}`);
+      ws.onopen = () => log(`WS connected as ${sid}`);
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+
+          if (data.type === "emotion_result") {
+            const psid = data.sid || sid;
+            const p = ensureParticipantTile(psid);
+            resizeCanvasToVideo(p);
+            drawFaceOverlays(p, data.faceDetails || data.FaceDetails || []);
+            updateMetaBox(p, data.faceDetails || data.FaceDetails || [], data.primaryEmotion);
+          } else if (data.type === "emotion_error") {
+            log(`Rekognition error: ${data.message}`);
+          } else {
+            log(String(event.data));
+          }
+        } catch {
+          log(String(event.data));
+        }
+      };
+      ws.onclose = () => log("WS closed");
+      ws.onerror = () => log("WS error");
+    }
+
+    const uploadChunk = async (blob, url) => {
+      try {
+        const fd = new FormData();
+        fd.append("chunk", blob, `part-${Date.now()}.webm`);
+        await fetch(url, { method: "POST", body: fd });
+      } catch (err) {
+        log("Upload failed");
+        console.error("Upload failed:", err);
       }
     }
 
     const start = async () => {
       try {
-        btnStart.disabled = true;
-        setStatus("starting…");
+        btnStart.disabled = true; setStatus("starting…");
 
-        // Create/get sid and connect WS first
         const sid = sessionIdInput.value || uuid();
         sessionIdInput.value = sid;
         connectWS(sid);
 
-        // Create local tracks via Twilio Video SDK
         const tracks = await Twilio.Video.createLocalTracks({
           audio: true,
           video: { width: 1280, height: 720, frameRate: 30 }
         });
+        localAudioTrack = tracks.find(t=>t.kind==="audio");
+        localVideoTrack = tracks.find(t=>t.kind==="video");
 
-        localAudioTrack = tracks.find(t => t.kind === "audio");
-        localVideoTrack = tracks.find(t => t.kind === "video");
-
-        // Preview stream
         const previewStream = new MediaStream();
         if (localAudioTrack) previewStream.addTrack(localAudioTrack.mediaStreamTrack);
         if (localVideoTrack) previewStream.addTrack(localVideoTrack.mediaStreamTrack);
         preview.srcObject = previewStream;
+        preview.muted = true; 
+        preview.play().catch(()=>{ /* ignore if already playing */ });
 
-        // Individual streams for recording
+        attachLocalVideoToTile(sid);
+
         audioStream = new MediaStream([localAudioTrack.mediaStreamTrack]);
         videoStream = new MediaStream([localVideoTrack.mediaStreamTrack]);
 
@@ -196,56 +480,43 @@
         const audioChunkMs = Math.max(200, parseInt(audioLenInput.value || "1000", 10));
         const videoChunkMs = Math.max(200, parseInt(videoLenInput.value || "1000", 10));
 
-        // Upload handlers
         audioRecorder.ondataavailable = (e) => {
           if (e.data && e.data.size) {
             uploadChunk(e.data, `${serverBase}/upload/audio?sid=${encodeURIComponent(sid)}`);
           }
         };
-
-        // On every video chunk, also snapshot a JPEG and send to /analyze/frame
-        videoRecorder.ondataavailable = async (e) => {
+        videoRecorder.ondataavailable = (e) => {
           if (e.data && e.data.size) {
             uploadChunk(e.data, `${serverBase}/upload/video?sid=${encodeURIComponent(sid)}`);
-            await postFrameForEmotion(sid);
           }
         };
 
         audioRecorder.start(audioChunkMs);
         videoRecorder.start(videoChunkMs);
 
-        btnStop.disabled = false;
-        btnMute.disabled = false;
-        btnHide.disabled = false;
+        await waitForVideoReady(preview);
+        startSnapshots(sid, SNAPSHOT_INTERVAL_MS);
+
+        btnStop.disabled = false; btnMute.disabled = false; btnHide.disabled = false;
         setStatus("streaming");
-      } catch (e) {
-        console.error(e);
-        logServer("Start failed (see console).");
-        btnStart.disabled = false;
-        setStatus("idle");
+      } catch (err) {
+        console.error(err); log("Start failed");
+        btnStart.disabled = false; setStatus("idle");
       }
     }
 
-    const stop = () => {
-      [audioRecorder, videoRecorder].forEach(r => {
-        if (r && r.state !== "inactive") r.stop();
-      });
+    const stop = async () => {
 
-      [localAudioTrack, localVideoTrack].forEach(t => t && t.stop());
+      stopSnapshots();
 
+      [audioRecorder, videoRecorder].forEach(r=>{ if (r && r.state!=="inactive") r.stop(); });
+      [localAudioTrack, localVideoTrack].forEach(t=> t && t.stop());
       if (preview.srcObject) {
-        preview.srcObject.getTracks().forEach(tr => tr.stop());
+        preview.srcObject.getTracks().forEach(tr=>tr.stop());
         preview.srcObject = null;
       }
-
-      btnStart.disabled = false;
-      btnStop.disabled = true;
-      btnMute.disabled = true;
-      btnHide.disabled = true;
-      isMuted = false;
-      isHidden = false;
-      btnMute.textContent = "Mute Audio";
-      btnHide.textContent = "Hide Video";
+      btnStart.disabled = false; btnStop.disabled = true; btnMute.disabled = true; btnHide.disabled = true;
+      isMuted=false; isHidden=false; btnMute.textContent="Mute Audio"; btnHide.textContent="Hide Video";
       setStatus("idle");
     }
 
@@ -263,21 +534,10 @@
       btnHide.textContent = isHidden ? "Show Video" : "Hide Video";
     }
 
-    const uploadChunk = async (blob, url) => {
-      try {
-        const fd = new FormData();
-        fd.append("chunk", blob, `part-${Date.now()}.webm`);
-        await fetch(url, { method: "POST", body: fd });
-      } catch (err) {
-        console.error("Upload failed:", err);
-        logServer("Upload failed (see console).");
-      }
-    }
-
     btnStart.onclick = start;
-    btnStop.onclick  = stop;
-    btnMute.onclick  = toggleMute;
-    btnHide.onclick  = toggleHide;
+    btnStop.onclick = stop;
+    btnMute.onclick = toggleMute;
+    btnHide.onclick = toggleHide;
   </script>
 </body>
 </html>

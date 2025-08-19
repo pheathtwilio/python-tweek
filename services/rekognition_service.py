@@ -94,6 +94,7 @@ def detect_everything(
     Raises:
         RuntimeError on Rekognition errors.
     """
+
     # Defaults
     region = region or os.getenv("AWS_REGION") or os.getenv("AWS_DEFAULT_REGION") or "us-east-1"
 
