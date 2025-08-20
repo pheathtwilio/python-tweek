@@ -8,7 +8,6 @@ self.onmessage = async (e) => {
 
   switch(type){
     case MSG.SNAPSHOT_REQUEST:
-      console.log(`worker: snapshot request`);
       await snapshotRequest(bitmap, sid);
       break;
     default:

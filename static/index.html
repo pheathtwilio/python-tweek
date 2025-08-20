@@ -179,7 +179,6 @@
       }
     }
 
-    
 
     // Participants
     const participants = new Map(); 
@@ -233,29 +232,6 @@
       const bitmap = await createImageBitmap(preview);
       analyticsWorker.postMessage({ type: MSG.SNAPSHOT_REQUEST, sid, bitmap }, [bitmap]);
 
-      // snapCanvas.width = preview.videoWidth;
-      // snapCanvas.height = preview.videoHeight;
-
-      // const ctx = snapCanvas.getContext('2d');
-      // if (!ctx) return;
-
-      // ctx.drawImage(preview, 0, 0, snapCanvas.width, snapCanvas.height);
-
-      // const blob = await new Promise(resolve => snapCanvas.toBlob(resolve, 'image/jpeg', 0.9));
-      // if (!blob) return;
-
-      // const fd = new FormData();
-      // fd.append('frame', blob, 'frame.jpg');
-
-      // try {
-      //   await fetch(`${serverBase}/analyze/frame?sid=${encodeURIComponent(sid)}`, {
-      //     method: 'POST',
-      //     body: fd
-      //   });
-      // } catch (e) {
-      //   console.warn('Frame post failed', e);
-      //   logServer('Frame post failed (see console).');
-      // }
     };
 
     const waitForVideoReady = (video) => {
