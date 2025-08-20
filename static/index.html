@@ -123,7 +123,7 @@
 
   <!-- Twilio Video SDK (v2.32.1) -->
   <script src="https://sdk.twilio.com/js/video/releases/2.32.1/twilio-video.min.js"></script>
-
+  <script src="/static/messages.js"></script>
   <script>
 
     const serverBase = "";
@@ -162,6 +162,24 @@
       serverLog.scrollTop = serverLog.scrollHeight;
     }
     const logServer = log;
+
+    // Web Workers
+    const workerUrl = new URL('/static/analytics.worker.js', window.location.origin);
+    const analyticsWorker = new Worker(workerUrl);
+
+    analyticsWorker.onmessage = (e) => {
+      switch(e.data.type){
+        case MSG.SNAPSHOT_OK:
+          logServer(e.data.message);
+          break;
+        case MSG.SNAPSHOT_ERROR:
+          logServer(e.data.error);
+        default:
+          break;
+      }
+    }
+
+    
 
     // Participants
     const participants = new Map(); 
@@ -204,6 +222,7 @@
     }
 
     const postFrameForEmotion = async (sid) => {
+
       if (!preview) return;
       if (!preview.videoWidth) return;
 
@@ -211,29 +230,32 @@
         await new Promise(res => preview.requestVideoFrameCallback(() => res()));
       }
 
-      snapCanvas.width = preview.videoWidth;
-      snapCanvas.height = preview.videoHeight;
+      const bitmap = await createImageBitmap(preview);
+      analyticsWorker.postMessage({ type: MSG.SNAPSHOT_REQUEST, sid, bitmap }, [bitmap]);
 
-      const ctx = snapCanvas.getContext('2d');
-      if (!ctx) return;
+      // snapCanvas.width = preview.videoWidth;
+      // snapCanvas.height = preview.videoHeight;
 
-      ctx.drawImage(preview, 0, 0, snapCanvas.width, snapCanvas.height);
+      // const ctx = snapCanvas.getContext('2d');
+      // if (!ctx) return;
 
-      const blob = await new Promise(resolve => snapCanvas.toBlob(resolve, 'image/jpeg', 0.9));
-      if (!blob) return;
+      // ctx.drawImage(preview, 0, 0, snapCanvas.width, snapCanvas.height);
 
-      const fd = new FormData();
-      fd.append('frame', blob, 'frame.jpg');
+      // const blob = await new Promise(resolve => snapCanvas.toBlob(resolve, 'image/jpeg', 0.9));
+      // if (!blob) return;
 
-      try {
-        await fetch(`${serverBase}/analyze/frame?sid=${encodeURIComponent(sid)}`, {
-          method: 'POST',
-          body: fd
-        });
-      } catch (e) {
-        console.warn('Frame post failed', e);
-        logServer('Frame post failed (see console).');
-      }
+      // const fd = new FormData();
+      // fd.append('frame', blob, 'frame.jpg');
+
+      // try {
+      //   await fetch(`${serverBase}/analyze/frame?sid=${encodeURIComponent(sid)}`, {
+      //     method: 'POST',
+      //     body: fd
+      //   });
+      // } catch (e) {
+      //   console.warn('Frame post failed', e);
+      //   logServer('Frame post failed (see console).');
+      // }
     };
 
     const waitForVideoReady = (video) => {
